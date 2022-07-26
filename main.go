@@ -8,7 +8,9 @@ import (
 	"github.com/joho/godotenv"
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
 	events "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
+	"gonum.org/v1/gonum/graph"
 	"gonum.org/v1/gonum/graph/simple"
+	"gonum.org/v1/gonum/graph/traverse"
 )
 
 func main() {
@@ -25,13 +27,15 @@ func main() {
 	p := dem.NewParser(f)
 	defer p.Close()
 
-	scores := []Score{}
+	// Create score graph
+	sg := newScoreGraph()
 	firstScore := Score{
 		tick: 0,
 		t:    0,
 		ct:   0,
 	}
-	scores = append(scores, firstScore)
+	sg.addScore(firstScore)
+	previousScore := firstScore
 
 	p.RegisterEventHandler(func(e events.ScoreUpdated) {
 		s := Score{
@@ -41,22 +45,23 @@ func main() {
 		// 2 = t, 3 = ct
 		if e.TeamState.Team() == 2 {
 			s.t = e.NewScore
-			s.ct = scores[len(scores)-1].ct
+			s.ct = previousScore.ct
 		} else if e.TeamState.Team() == 3 {
-			s.t = scores[len(scores)-1].t
+			s.t = previousScore.t
 			s.ct = e.NewScore
 		}
 
 		//ensure there are no duplicates
 		scoreExists := false
-		for _, score := range scores {
+		for _, score := range sg.scores {
 			if score == s {
 				scoreExists = true
 				break
 			}
 		}
 		if !scoreExists {
-			scores = append(scores, s)
+			sg.addScore(s)
+			previousScore = s
 		}
 	})
 
@@ -66,24 +71,7 @@ func main() {
 		log.Panic("failed to parse demo: ", err)
 	}
 
-	// Create score graph
-	sg := newScoreGraph()
-	for _, s := range scores {
-		u := sg.NewNode()
-		uid := u.ID()
-		u = node{
-			score: s,
-			id:    uid,
-		}
-		sg.AddNode(u)
-		sg.ids[s] = uid
-		sg.scores[uid] = s
-
-		fmt.Printf("id = %v, tick = %v, t = %v, ct = %v \n", uid, s.tick, s.t, s.ct)
-	}
-
 	nodes := sg.Nodes()
-
 	for nodes.Len() > 0 {
 		nodes.Next()
 		n := sg.Node(nodes.Node().ID()) // n = current node
@@ -91,10 +79,9 @@ func main() {
 
 		// loop through scores to attach edges
 		for _, s := range sg.scores {
-			//TODO - cleanup how to pick the starting 0-0 point (some logic to say what is the last 0 total score with lower tick maybe)
 			//TODO - will have to account for OT scores eventually
 			if cs.tick < s.tick { // cs tick must be lower then the next score in the graph to attach edge to it i.e. can't go back in time
-				if cs.Total() == s.Total()-1 { // if score equals currentTotal+1 then add edge to it
+				if cs.Total() == s.Total()-1 { // if score equals currentTotal+1 then add edge to it // TODO - maybe this check doesn't need to be here?
 					if hasIncreasedByOne(cs, s) {
 						sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
 					}
@@ -105,12 +92,50 @@ func main() {
 				}
 			}
 		}
-
-		fmt.Printf("node id = %v, total = %v \n", n.ID(), sg.scoreAtId(n.ID()).Total())
 	}
 
-	//TODO - find longest possible path of nodes in sg
-	//TODO - we want the longest possible path where round total 0 has highest tick number possible
+	//find all 0-0 scores
+	startScores := []Score{}
+	for _, s := range sg.scores {
+		if s.Total() == 0 {
+			startScores = append(startScores, s)
+		}
+	}
+
+	//find highest score
+	finalScore := Score{}
+	for _, s := range sg.scores {
+		if finalScore.Total() < s.Total() {
+			finalScore = s
+		}
+	}
+
+	//finding the longest possible path that exists, with the highest starting 0-0 score at the start
+	finalRounds := []Score{}
+	finalRounds = append(finalRounds, Score{})
+	for _, startScore := range startScores {
+		rounds := []Score{}
+		df := traverse.DepthFirst{
+			Visit: func(n graph.Node) {
+				rounds = append(rounds, sg.scoreAtId(n.ID()))
+			},
+		}
+		df.Walk(sg, sg.nodeAtScore(startScore), func(n graph.Node) bool {
+			// until score is finalscore
+			return sg.scoreAtId(n.ID()) == finalScore
+		})
+
+		if len(finalRounds) <= len(rounds) {
+			if finalRounds[0].tick < rounds[0].tick {
+				finalRounds = rounds
+			}
+		}
+	}
+
+	// This is the set of rounds in a game...
+	for _, r := range finalRounds {
+		fmt.Printf("demo_goto %v, t = %v, ct = %v \n", r.tick, r.t, r.ct)
+	}
 }
 
 func hasIncreasedByOne(s1 Score, s2 Score) bool {

@@ -19,6 +19,18 @@ func newScoreGraph() scoreGraph {
 	}
 }
 
+func (g scoreGraph) addScore(s Score) {
+	n := g.NewNode()
+	id := n.ID()
+	n = node{
+		score: s,
+		id:    id,
+	}
+	g.AddNode(n)
+	g.ids[s] = id
+	g.scores[id] = s
+}
+
 func (g scoreGraph) nodeAtScore(score Score) graph.Node {
 	id, ok := g.ids[score]
 	if !ok {
