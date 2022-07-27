@@ -6,7 +6,7 @@ import (
 )
 
 type scoreGraph struct {
-	ids    map[Score]int64
+	ids    map[Score]int64 //TODO - maybe could move id into Score object, would remove need for these maps
 	scores map[int64]Score
 	*simple.DirectedGraph
 }

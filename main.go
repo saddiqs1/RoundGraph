@@ -29,27 +29,14 @@ func main() {
 
 	// Create score graph
 	sg := newScoreGraph()
-	firstScore := Score{
-		tick: 0,
-		t:    0,
-		ct:   0,
-	}
-	sg.addScore(firstScore)
-	previousScore := firstScore
 
-	p.RegisterEventHandler(func(e events.ScoreUpdated) {
+	p.RegisterEventHandler(func(e events.RoundStart) {
 		s := Score{
-			tick: p.CurrentFrame(),
+			tick: p.GameState().IngameTick(),
 		}
 
-		// 2 = t, 3 = ct
-		if e.TeamState.Team() == 2 {
-			s.t = e.NewScore
-			s.ct = previousScore.ct
-		} else if e.TeamState.Team() == 3 {
-			s.t = previousScore.t
-			s.ct = e.NewScore
-		}
+		s.t = p.GameState().TeamTerrorists().Score()
+		s.ct = p.GameState().TeamCounterTerrorists().Score()
 
 		//ensure there are no duplicates
 		scoreExists := false
@@ -61,7 +48,6 @@ func main() {
 		}
 		if !scoreExists {
 			sg.addScore(s)
-			previousScore = s
 		}
 	})
 
@@ -79,16 +65,15 @@ func main() {
 
 		// loop through scores to attach edges
 		for _, s := range sg.scores {
-			//TODO - will have to account for OT scores eventually
+			/*
+				TODO - EDGE CASES
+				Overtime
+			*/
 			if cs.tick < s.tick { // cs tick must be lower then the next score in the graph to attach edge to it i.e. can't go back in time
-				if cs.Total() == s.Total()-1 { // if score equals currentTotal+1 then add edge to it // TODO - maybe this check doesn't need to be here?
-					if hasIncreasedByOne(cs, s) {
-						sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
-					}
-				} else if cs.Total() == 15 { // if current total is 15, then the scores will switch
-					if cs.t == s.ct && cs.ct == s.t {
-						sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
-					}
+				if isHalfTime(cs, s) {
+					sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
+				} else if hasIncreasedByOne(cs, s) {
+					sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
 				}
 			}
 		}
@@ -111,6 +96,7 @@ func main() {
 	}
 
 	//finding the longest possible path that exists, with the highest starting 0-0 score at the start
+	//TODO - WE NEED TO FIND LONGEST PATH
 	finalRounds := []Score{}
 	finalRounds = append(finalRounds, Score{})
 	for _, startScore := range startScores {
@@ -125,27 +111,44 @@ func main() {
 			return sg.scoreAtId(n.ID()) == finalScore
 		})
 
-		if len(finalRounds) <= len(rounds) {
-			if finalRounds[0].tick < rounds[0].tick {
-				finalRounds = rounds
-			}
+		if len(finalRounds) < len(rounds) {
+			finalRounds = rounds
+		} else if len(finalRounds) == len(rounds) && finalRounds[0].tick < rounds[0].tick {
+			finalRounds = rounds
 		}
 	}
 
 	// This is the set of rounds in a game...
+	// TODO - map these to Round struct, which includes start and end tick for the round
+	// TODO - investigate which half time score it gets
 	for _, r := range finalRounds {
 		fmt.Printf("demo_goto %v, t = %v, ct = %v \n", r.tick, r.t, r.ct)
 	}
 }
 
 func hasIncreasedByOne(s1 Score, s2 Score) bool {
-	result := false
-
-	if s1.t == s2.t || s2.t == s1.t+1 { // Ensure t score only jumped up by 1
-		if s1.ct == s2.ct || s2.ct == s1.ct+1 { // Ensure ct score only jumped up by 1
-			result = true
+	if s1.Total() == s2.Total()-1 { // Ensure score increased by 1
+		if s1.t == s2.t || s2.t == s1.t+1 { // Ensure t score only jumped up by 1
+			if s1.ct == s2.ct || s2.ct == s1.ct+1 { // Ensure ct score only jumped up by 1
+				return true
+			}
 		}
 	}
 
-	return result
+	return false
+}
+
+func isHalfTime(s1 Score, s2 Score) bool {
+	if s1.Total() == 14 { // if current total is 14, then the scores will switch next round
+		// t and ct will switch, one of them will +1 e.g. 4-10 becomes 11-4
+		if s1.t == s2.ct && s1.ct == s2.t-1 {
+			return true
+		}
+
+		if s1.ct == s2.t && s1.t == s2.ct-1 {
+			return true
+		}
+	}
+
+	return false
 }
