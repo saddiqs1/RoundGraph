@@ -79,17 +79,16 @@ func main() {
 		}
 	}
 
-	//find all 0-0 scores
 	startScores := []Score{}
+	finalScore := Score{}
+
 	for _, s := range sg.scores {
+		//find all 0-0 scores
 		if s.Total() == 0 {
 			startScores = append(startScores, s)
 		}
-	}
 
-	//find highest score
-	finalScore := Score{}
-	for _, s := range sg.scores {
+		//find highest score
 		if finalScore.Total() < s.Total() {
 			finalScore = s
 		}
@@ -103,6 +102,7 @@ func main() {
 		rounds := []Score{}
 		df := traverse.DepthFirst{
 			Visit: func(n graph.Node) {
+				// TODO - check if it's halftime node, do something
 				rounds = append(rounds, sg.scoreAtId(n.ID()))
 			},
 		}
@@ -118,9 +118,12 @@ func main() {
 		}
 	}
 
+	/*
+		TODO
+		- maybe change to weighted graph, change weights of edges based off how close the ticks are. Actually find longest path
+		- map these to Round struct, which includes start and end tick for the round
+	*/
 	// This is the set of rounds in a game...
-	// TODO - map these to Round struct, which includes start and end tick for the round
-	// TODO - investigate which half time score it gets
 	for _, r := range finalRounds {
 		fmt.Printf("demo_goto %v, t = %v, ct = %v \n", r.tick, r.t, r.ct)
 	}
