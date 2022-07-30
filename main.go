@@ -9,8 +9,8 @@ import (
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
 	events "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
 	"gonum.org/v1/gonum/graph"
+	"gonum.org/v1/gonum/graph/path"
 	"gonum.org/v1/gonum/graph/simple"
-	"gonum.org/v1/gonum/graph/traverse"
 )
 
 func main() {
@@ -57,6 +57,7 @@ func main() {
 		log.Panic("failed to parse demo: ", err)
 	}
 
+	// Set edges for each node
 	nodes := sg.Nodes()
 	for nodes.Len() > 0 {
 		nodes.Next()
@@ -66,14 +67,16 @@ func main() {
 		// loop through scores to attach edges
 		for _, s := range sg.scores {
 			/*
-				TODO - EDGE CASES
-				Overtime
+				TODO:
+				Overtime scores
 			*/
 			if cs.tick < s.tick { // cs tick must be lower then the next score in the graph to attach edge to it i.e. can't go back in time
-				if isHalfTime(cs, s) {
-					sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
+				if needsSetWeight(cs, s) {
+					sg.SetWeightedEdge(simple.WeightedEdge{F: n, T: sg.nodeAtScore(s), W: float64(s.tick - cs.tick)})
+				} else if isFourteen(cs, s) {
+					sg.SetWeightedEdge(simple.WeightedEdge{F: n, T: sg.nodeAtScore(s), W: 1})
 				} else if hasIncreasedByOne(cs, s) {
-					sg.SetEdge(simple.Edge{F: n, T: sg.nodeAtScore(s)})
+					sg.SetWeightedEdge(simple.WeightedEdge{F: n, T: sg.nodeAtScore(s), W: 1})
 				}
 			}
 		}
@@ -94,42 +97,37 @@ func main() {
 		}
 	}
 
-	//finding the longest possible path that exists, with the highest starting 0-0 score at the start
-	//TODO - WE NEED TO FIND LONGEST PATH
-	finalRounds := []Score{}
-	finalRounds = append(finalRounds, Score{})
+	// Find the shortest path from all starting scores
+	finalScores := []graph.Node{}
+	var finalRoundsWeight float64
+	firstPass := true
+	pt := path.DijkstraAllPaths(sg)
 	for _, startScore := range startScores {
-		rounds := []Score{}
-		df := traverse.DepthFirst{
-			Visit: func(n graph.Node) {
-				// TODO - check if it's halftime node, do something
-				rounds = append(rounds, sg.scoreAtId(n.ID()))
-			},
-		}
-		df.Walk(sg, sg.nodeAtScore(startScore), func(n graph.Node) bool {
-			// until score is finalscore
-			return sg.scoreAtId(n.ID()) == finalScore
-		})
-
-		if len(finalRounds) < len(rounds) {
-			finalRounds = rounds
-		} else if len(finalRounds) == len(rounds) && finalRounds[0].tick < rounds[0].tick {
-			finalRounds = rounds
+		path, weight, _ := pt.Between(sg.idAtScore(startScore), sg.idAtScore(finalScore))
+		if firstPass {
+			finalScores = path
+			finalRoundsWeight = weight
+			firstPass = false
+		} else {
+			if weight < finalRoundsWeight {
+				finalScores = path
+				finalRoundsWeight = weight
+			}
 		}
 	}
 
 	/*
 		TODO
-		- maybe change to weighted graph, change weights of edges based off how close the ticks are. Actually find longest path
 		- map these to Round struct, which includes start and end tick for the round
 	*/
 	// This is the set of rounds in a game...
-	for _, r := range finalRounds {
-		fmt.Printf("demo_goto %v, t = %v, ct = %v \n", r.tick, r.t, r.ct)
+	for _, s := range finalScores {
+		r := sg.scoreToRound(sg.scoreAtId(s.ID()), p.Header().PlaybackTicks)
+		fmt.Printf("demo_goto %v - demo_goto %v, r = %v, t = %v, ct = %v \n", r.startTick, r.endTick, r.roundNumber, r.t, r.ct)
 	}
 }
 
-func hasIncreasedByOne(s1 Score, s2 Score) bool {
+func hasIncreasedByOne(s1, s2 Score) bool {
 	if s1.Total() == s2.Total()-1 { // Ensure score increased by 1
 		if s1.t == s2.t || s2.t == s1.t+1 { // Ensure t score only jumped up by 1
 			if s1.ct == s2.ct || s2.ct == s1.ct+1 { // Ensure ct score only jumped up by 1
@@ -141,7 +139,7 @@ func hasIncreasedByOne(s1 Score, s2 Score) bool {
 	return false
 }
 
-func isHalfTime(s1 Score, s2 Score) bool {
+func isFourteen(s1, s2 Score) bool {
 	if s1.Total() == 14 { // if current total is 14, then the scores will switch next round
 		// t and ct will switch, one of them will +1 e.g. 4-10 becomes 11-4
 		if s1.t == s2.ct && s1.ct == s2.t-1 {
@@ -149,6 +147,17 @@ func isHalfTime(s1 Score, s2 Score) bool {
 		}
 
 		if s1.ct == s2.t && s1.t == s2.ct-1 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func needsSetWeight(s1, s2 Score) bool {
+	s1Total := s1.Total()
+	if s1Total == 0 || s1Total == 15 {
+		if hasIncreasedByOne(s1, s2) {
 			return true
 		}
 	}
