@@ -37,6 +37,27 @@ func main() {
 		roundStarts = append(roundStarts, rs)
 	})
 
+	scoreUpdates := []ScoreUpdate{}
+	p.RegisterEventHandler(func(e events.ScoreUpdated) {
+		s := ScoreUpdate{
+			tick:  p.GameState().IngameTick(),
+			score: e.NewScore,
+		}
+
+		if e.TeamState.Team() == 2 {
+			s.team = "t"
+		} else if e.TeamState.Team() == 3 {
+			s.team = "ct"
+		}
+
+		scoreUpdates = append(scoreUpdates, s)
+	})
+
+	gameHalftimes := []int{}
+	p.RegisterEventHandler(func(e events.GameHalfEnded) {
+		gameHalftimes = append(gameHalftimes, p.GameState().IngameTick())
+	})
+
 	// Parse to end
 	err = p.ParseToEnd()
 	if err != nil {
@@ -47,7 +68,7 @@ func main() {
 	rg := newRoundGraph()
 
 	// Set rg.rounds
-	rg.setRounds(roundStarts, p.Header().PlaybackTicks)
+	rg.setRounds(roundStarts, scoreUpdates, gameHalftimes, p.Header().PlaybackTicks)
 
 	// Set edges for each node
 	rg.setEdges()

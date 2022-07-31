@@ -54,6 +54,7 @@ type Round struct {
 	roundNumber int
 	t           int
 	ct          int
+	isHalfTime  bool
 }
 
 type node struct {
@@ -67,22 +68,57 @@ type RoundStart struct {
 	ct   int
 }
 
+type ScoreUpdate struct {
+	tick  int
+	team  string
+	score int
+}
+
 func (n node) ID() int64   { return n.id }
 func (r Round) Total() int { return r.t + r.ct }
 
-func (g RoundGraph) setRounds(rounds []RoundStart, lastTick int) {
+func (g RoundGraph) setRounds(rounds []RoundStart, scores []ScoreUpdate, gameHalftimes []int, lastTick int) {
 	for i, round := range rounds {
 		r := Round{
 			startTick:   round.tick,
 			roundNumber: round.t + round.ct + 1,
 			t:           round.t,
 			ct:          round.ct,
+			isHalfTime:  false,
 		}
 
 		if int(i)+1 == len(rounds) {
 			r.endTick = lastTick
 		} else {
 			r.endTick = rounds[i+1].tick - 1
+		}
+
+		// Update round scores (some demos don't instantly update round scores when round is started)
+		for _, s := range scores {
+			if r.startTick <= s.tick && s.tick <= r.startTick+500 {
+				if s.team == "t" && s.score != r.t {
+					r.t = s.score
+				} else if s.team == "ct" && s.score != r.ct {
+					r.ct = s.score
+				}
+			}
+		}
+
+		// Set halftime bool using gameHalfEnded events
+		for _, gh := range gameHalftimes {
+			if r.startTick <= gh && gh <= r.endTick {
+				r.isHalfTime = true
+			}
+		}
+
+		// Some servers (e.g. esea) don't log gameHalfEnded events, so hard code it as below
+		if len(gameHalftimes) == 0 {
+			x := (r.roundNumber - 30) % 3 //TODO - check when the scores flip for the first time in OT to figure out it MR 6 or 10
+			if r.roundNumber == 15 {
+				r.isHalfTime = true
+			} else if r.roundNumber > 30 && x == 0 {
+				r.isHalfTime = true
+			}
 		}
 
 		g.addRound(r)
@@ -103,7 +139,7 @@ func (g RoundGraph) setEdges() {
 				Overtime rounds
 			*/
 			if cr.startTick < r.startTick { // cr tick must be before the next round in the graph to attach edge to it i.e. can't go back in time
-				if isFourteen(cr, r) {
+				if isHalfTime(cr, r) {
 					g.SetWeightedEdge(simple.WeightedEdge{F: n, T: g.nodeAtRound(r), W: 1})
 				} else if hasIncreasedByOne(cr, r) {
 					g.SetWeightedEdge(simple.WeightedEdge{F: n, T: g.nodeAtRound(r), W: float64(r.startTick - cr.startTick)})
@@ -125,8 +161,8 @@ func hasIncreasedByOne(r1, r2 Round) bool {
 	return false
 }
 
-func isFourteen(r1, r2 Round) bool {
-	if r1.Total() == 14 { // if current total is 14, then the rounds will switch next round
+func isHalfTime(r1, r2 Round) bool {
+	if r1.isHalfTime { // if current round is halftime, then the rounds will switch next round
 		// t and ct will switch, one of them will +1 e.g. 4-10 becomes 11-4
 		if r1.t == r2.ct && r1.ct == r2.t-1 {
 			return true
@@ -162,12 +198,12 @@ func (g RoundGraph) getMatchRounds() []Round {
 	pt := path.DijkstraAllPaths(g)
 	for _, startRound := range startRounds {
 		path, weight, _ := pt.Between(g.idAtRound(startRound), g.idAtRound(finalRound))
-		if firstPass {
-			matchNodes = path
-			finalRoundsWeight = weight
-			firstPass = false
-		} else {
-			if weight < finalRoundsWeight {
+		if len(path) > 0 {
+			if firstPass {
+				matchNodes = path
+				finalRoundsWeight = weight
+				firstPass = false
+			} else if weight < finalRoundsWeight {
 				matchNodes = path
 				finalRoundsWeight = weight
 			}
