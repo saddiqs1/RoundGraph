@@ -98,8 +98,10 @@ func (g RoundGraph) setRounds(rounds []RoundStart, scores []ScoreUpdate, gameHal
 			if r.startTick <= s.tick && s.tick <= r.startTick+500 {
 				if s.team == "t" && s.score != r.t {
 					r.t = s.score
+					r.roundNumber = r.Total() + 1
 				} else if s.team == "ct" && s.score != r.ct {
 					r.ct = s.score
+					r.roundNumber = r.Total() + 1
 				}
 			}
 		}
