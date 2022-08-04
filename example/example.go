@@ -1,21 +1,20 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
 	events "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
+
+	rd "github.com/saddiqs1/round-detection/v1"
 )
 
+// Run like this: go run example.go -demo /path/to/demo.dem
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
-	}
-	demoFileName := os.Getenv("DEMO1")
-	f, err := os.Open(demoFileName)
+	f, err := os.Open(DemoPathFromArgs())
 	if err != nil {
 		log.Panic("failed to open demo file: ", err)
 	}
@@ -25,29 +24,29 @@ func main() {
 	defer p.Close()
 
 	// Find all round start events
-	roundStarts := []RoundStart{}
+	roundStarts := []rd.RoundStart{}
 	p.RegisterEventHandler(func(e events.RoundStart) {
-		rs := RoundStart{
-			tick: p.GameState().IngameTick(),
+		rs := rd.RoundStart{
+			Tick: p.GameState().IngameTick(),
 		}
 
-		rs.t = p.GameState().TeamTerrorists().Score()
-		rs.ct = p.GameState().TeamCounterTerrorists().Score()
+		rs.T = p.GameState().TeamTerrorists().Score()
+		rs.CT = p.GameState().TeamCounterTerrorists().Score()
 
 		roundStarts = append(roundStarts, rs)
 	})
 
-	scoreUpdates := []ScoreUpdate{}
+	scoreUpdates := []rd.ScoreUpdate{}
 	p.RegisterEventHandler(func(e events.ScoreUpdated) {
-		s := ScoreUpdate{
-			tick:  p.GameState().IngameTick(),
-			score: e.NewScore,
+		s := rd.ScoreUpdate{
+			Tick:  p.GameState().IngameTick(),
+			Score: e.NewScore,
 		}
 
 		if e.TeamState.Team() == 2 {
-			s.team = "t"
+			s.Team = "t"
 		} else if e.TeamState.Team() == 3 {
-			s.team = "ct"
+			s.Team = "ct"
 		}
 
 		scoreUpdates = append(scoreUpdates, s)
@@ -71,19 +70,36 @@ func main() {
 	}
 
 	// Create round graph
-	rg := newRoundGraph()
+	rg := rd.NewRoundGraph()
 
 	// Set rg.rounds
-	rg.setRounds(roundStarts, scoreUpdates, gameHalftimes, lastTick)
+	rg.SetRounds(roundStarts, scoreUpdates, gameHalftimes, lastTick)
 
 	// Set edges for each node
-	rg.setEdges()
+	rg.SetEdges()
 
 	// Find the shortest path from the starting
-	matchRounds := rg.getMatchRounds()
+	matchRounds := rg.GetMatchRounds()
 
 	// This is the set of rounds in a game...
 	for _, r := range matchRounds {
-		fmt.Printf("demo_goto %v - demo_goto %v, r = %v, t = %v, ct = %v \n", r.startTick, r.endTick, r.roundNumber, r.t, r.ct)
+		fmt.Printf("demo_goto %v - demo_goto %v, r = %v, t = %v, ct = %v \n", r.StartTick, r.EndTick, r.RoundNumber, r.T, r.CT)
 	}
+}
+
+// DemoPathFromArgs returns the value of the -demo command line flag.
+// Panics if an error occurs.
+func DemoPathFromArgs() string {
+	fl := new(flag.FlagSet)
+
+	demPathPtr := fl.String("demo", "", "Demo file `path`")
+
+	err := fl.Parse(os.Args[1:])
+	if err != nil {
+		panic(err)
+	}
+
+	demPath := *demPathPtr
+
+	return demPath
 }
