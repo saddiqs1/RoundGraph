@@ -9,7 +9,7 @@ import (
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
 	events "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
 
-	rd "github.com/saddiqs1/round-detection/v1"
+	rd "github.com/saddiqs1/RoundGraph/v1"
 )
 
 // Run like this: go run example.go -demo /path/to/demo.dem
