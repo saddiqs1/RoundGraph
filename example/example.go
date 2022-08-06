@@ -9,7 +9,7 @@ import (
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
 	events "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
 
-	rd "github.com/saddiqs1/RoundGraph/v1"
+	rgraph "github.com/saddiqs1/RoundGraph/v1"
 )
 
 // Run like this: go run example.go -demo /path/to/demo.dem
@@ -24,9 +24,9 @@ func main() {
 	defer p.Close()
 
 	// Find all round start events
-	roundStarts := []rd.RoundStart{}
+	roundStarts := []rgraph.RoundStart{}
 	p.RegisterEventHandler(func(e events.RoundStart) {
-		rs := rd.RoundStart{
+		rs := rgraph.RoundStart{
 			Tick: p.GameState().IngameTick(),
 		}
 
@@ -36,9 +36,9 @@ func main() {
 		roundStarts = append(roundStarts, rs)
 	})
 
-	scoreUpdates := []rd.ScoreUpdate{}
+	scoreUpdates := []rgraph.ScoreUpdate{}
 	p.RegisterEventHandler(func(e events.ScoreUpdated) {
-		s := rd.ScoreUpdate{
+		s := rgraph.ScoreUpdate{
 			Tick:  p.GameState().IngameTick(),
 			Score: e.NewScore,
 		}
@@ -70,7 +70,7 @@ func main() {
 	}
 
 	// Create round graph
-	rg := rd.NewRoundGraph()
+	rg := rgraph.NewRoundGraph()
 
 	// Set rg.rounds
 	rg.SetRounds(roundStarts, scoreUpdates, gameHalftimes, lastTick)
