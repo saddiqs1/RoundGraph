@@ -1,4 +1,4 @@
-module github.com/saddiqs1/RoundGraph/v1
+module github.com/saddiqs1/RoundGraph
 
 go 1.18
 
